@@ -1,12 +1,10 @@
 from __future__ import division
 
+from Box2D import *
+from feather import config
 import pyglet
+from pyglet.gl import *
 import sys
-
-class MyWindow(pyglet.window.Window):
-    def __init__(self, **kwargs):
-        super(MyWindow, self).__init__(**kwargs)
-        TitleScreen(self)
 
 class Screen(object):
     def __init__(self, window):
@@ -48,9 +46,17 @@ class TitleScreen(Screen):
 class GameScreen(Screen):
     def __init__(self, window):
         super(GameScreen, self).__init__(window)
+        self._init_world()
+        self._clock_display = pyglet.clock.ClockDisplay()
+
+    def _init_world(self):
+        aabb = b2AABB()
+        self.world = b2World(aabb, config.gravity, True)
 
     def on_draw(self):
         self.window.clear()
+        if config.fps:
+            self._clock_display.draw()
         return pyglet.event.EVENT_HANDLED
 
     def on_key_press(self, symbol, modifiers):
@@ -59,8 +65,8 @@ class GameScreen(Screen):
         return pyglet.event.EVENT_HANDLED
 
 def main():
-    fullscreen = '--windowed' not in sys.argv
-    window = MyWindow(fullscreen=fullscreen)
+    window = pyglet.window.Window(fullscreen=config.fullscreen)
+    TitleScreen(window)
     pyglet.app.run()
 
 if __name__ == '__main__':
