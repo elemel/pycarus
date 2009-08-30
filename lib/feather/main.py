@@ -98,7 +98,35 @@ class Icarus(Actor):
         self._keys.discard(symbol)
 
 class Cloud(Actor):
-    pass
+    def __init__(self, game_screen, position=(0, 0)):
+        self.game_screen = game_screen
+        self._init_body(position)
+        self._init_sprite()
+
+    def _init_body(self, position):
+        body_def = b2BodyDef()
+        body_def.position = position
+        self.body = self.game_screen.world.CreateBody(body_def)
+        shape_def = b2CircleDef()
+        shape_def.radius = 1
+        shape_def.density = 0.1
+        self.body.CreateShape(shape_def)
+        self.body.SetMassFromShapes()
+
+    def _init_sprite(self):
+        texture = pyglet.resource.texture('images/cloud.png')
+        self.sprite = rabbyt.Sprite(texture, scale=0.02)
+
+    def delete(self):
+        self.game_screen.world.DestroyBody(self.body)
+
+    def draw(self):
+        self.sprite.xy = self.body.position.tuple()
+        self.sprite.render()
+
+    def step(self, dt):
+        anti_gravity_force = self.body.massData.mass * config.gravity
+        self.body.ApplyForce((0, anti_gravity_force), self.body.position)
 
 class GameScreen(Screen):
     def __init__(self, window):
@@ -106,6 +134,7 @@ class GameScreen(Screen):
         self._init_world()
         self._clock_display = pyglet.clock.ClockDisplay()
         self._icarus = Icarus(self)
+        self._clouds = [Cloud(self, (-5, 5)), Cloud(self, (5, 5))]
         self.time = 0
         self.dt = 1 / 60
         self.world_time = 0
@@ -120,6 +149,8 @@ class GameScreen(Screen):
         while self.world_time + self.dt <= self.time:
             self.world_time += self.dt
             self._icarus.step(self.dt)
+            for cloud in self._clouds:
+                cloud.step(self.dt)
             self.world.Step(self.dt, config.position_iterations,
                             config.velocity_iterations)
 
@@ -127,15 +158,18 @@ class GameScreen(Screen):
         aabb = b2AABB()
         aabb.lowerBound = -100, -100
         aabb.upperBound = 100, 100
-        self.world = b2World(aabb, config.gravity, True)
+        self.world = b2World(aabb, (0, -config.gravity), True)
 
     def on_draw(self):
+        glClearColor(0.7, 0.8, 0.9, 0)
         self.window.clear()
         glPushMatrix()
         glTranslatef(self.window.width // 2, self.window.height // 2, 0)
-        scale = self.window.height / 10
+        scale = self.window.height / 15
         glScalef(scale, scale, scale)
         self._icarus.draw()
+        for cloud in self._clouds:
+            cloud.draw()
         glPopMatrix()
         if config.fps:
             self._clock_display.draw()

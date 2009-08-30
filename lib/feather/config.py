@@ -1,6 +1,6 @@
 fps = True
 fullscreen = True
-gravity = 0, -10
+gravity = 10
 position_iterations = 10
 velocity_iterations = 10
 icarus_lift_force = 15
