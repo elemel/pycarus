@@ -2,6 +2,7 @@ from __future__ import division
 
 from Box2D import *
 from feather import config
+from math import *
 import pyglet
 from pyglet.gl import *
 import rabbyt
@@ -9,6 +10,13 @@ import sys
 
 def clamp(x, min_x, max_x):
     return max(min_x, min(max_x, x))
+
+def normalize_signed_angle(angle):
+    while angle < -pi:
+        angle += 2 * pi
+    while angle >= pi:
+        angle -= 2 * pi
+    return angle
 
 class Screen(object):
     def __init__(self, window):
@@ -97,11 +105,8 @@ class Icarus(Actor):
 
     def draw(self):
         self.sprite.xy = self.body.position.tuple()
+        self.sprite.rot = self.body.angle * 180 / pi
         self.sprite.scale_x = self.facing * abs(self.sprite.scale_x)
-        if self.state == 'falling':
-            self.sprite.scale_y = -abs(self.sprite.scale_y)
-        else:
-            self.sprite.scale_y = abs(self.sprite.scale_y)
 
         # Fade to red as Icarus is heated by the sun, then fade to black as he
         # is burnt.
@@ -128,6 +133,8 @@ class Icarus(Actor):
             self.state = 'falling'
         if self.state == 'flying':
             self.step_flying(dt)
+        elif self.state == 'falling':
+            self.step_falling(dt)
 
     def step_flying(self, dt):
         self.fatigue = dt / config.flight_duration + clamp(self.fatigue, 0, 1)
@@ -143,6 +150,15 @@ class Icarus(Actor):
         air_force = -(self.body.linearVelocity * config.icarus_air_resistance)
         self.body.ApplyForce(b2Vec2(side_force, lift_force) + air_force,
                              self.body.position)
+        torque = -(self.body.angle * config.icarus_angular_k +
+                   self.body.angularVelocity * config.icarus_angular_damping)
+        self.body.ApplyTorque(torque)
+
+    def step_falling(self, dt):
+        angle_error = normalize_signed_angle(pi - self.body.angle)
+        torque = (angle_error * config.icarus_angular_k -
+                  self.body.angularVelocity * config.icarus_angular_damping)
+        self.body.ApplyTorque(torque)
 
     def on_key_press(self, symbol, modifiers):
         self.keys.add(symbol)
@@ -151,8 +167,9 @@ class Icarus(Actor):
         self.keys.discard(symbol)
 
 class Cloud(Actor):
-    def __init__(self, game_screen, position=(0, 0)):
+    def __init__(self, game_screen, position=(0, 0), width=5):
         self.game_screen = game_screen
+        self.width = width
         self.init_body(position)
         self.init_sprite()
 
@@ -161,8 +178,7 @@ class Cloud(Actor):
         body_def.position = position
         self.body = self.game_screen.world.CreateBody(body_def)
         shape_def = b2PolygonDef()
-        shape_def.SetAsBox(2, 0.5)
-        # shape_def.density = 0.1
+        shape_def.SetAsBox(self.width / 2, config.cloud_height / 2)
         self.body.CreateShape(shape_def)
         self.body.SetMassFromShapes()
 
@@ -172,6 +188,24 @@ class Cloud(Actor):
 
     def delete(self):
         self.game_screen.world.DestroyBody(self.body)
+
+    def draw_shadow(self):
+        sun_position = b2Vec2(self.game_screen.sun.position)
+        cloud_position = self.body.position
+        top_left = cloud_position - b2Vec2(self.width / 2, 0)
+        top_right = cloud_position + b2Vec2(self.width / 2, 0)
+        left_slope = top_left - sun_position
+        right_slope = top_right - sun_position
+        bottom_left = top_left + left_slope
+        bottom_right = top_right + right_slope
+        glBindTexture(GL_TEXTURE_2D, 0)
+        glColor3f(*config.shadow_color)
+        glBegin(GL_QUADS)
+        glVertex2f(top_left.x, top_left.y)
+        glVertex2f(top_right.x, top_right.y)
+        glVertex2f(bottom_right.x, bottom_right.y)
+        glVertex2f(bottom_left.x, bottom_left.y)
+        glEnd()
 
     def draw(self):
         self.sprite.xy = self.body.position.tuple()
@@ -216,16 +250,18 @@ class GameScreen(Screen):
         self.world = b2World(aabb, (0, -config.gravity), True)
 
     def on_draw(self):
-        red, green, blue = config.background_color
+        red, green, blue = config.sky_color
         glClearColor(red, green, blue, 0)
         self.window.clear()
         glPushMatrix()
         glTranslatef(self.window.width // 2, self.window.height // 2, 0)
         scale = self.window.height / 15
         glScalef(scale, scale, scale)
-        self.icarus.draw()
+        for cloud in self.clouds:
+            cloud.draw_shadow()
         for cloud in self.clouds:
             cloud.draw()
+        self.icarus.draw()
         glPopMatrix()
         if config.fps:
             self.clock_display.draw()
