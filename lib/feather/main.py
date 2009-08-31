@@ -107,15 +107,6 @@ class Icarus(Actor):
         self.sprite.xy = self.body.position.tuple()
         self.sprite.rot = self.body.angle * 180 / pi
         self.sprite.scale_x = self.facing * abs(self.sprite.scale_x)
-
-        # Fade to red as Icarus is heated by the sun, then fade to black as he
-        # is burnt.
-        damage_factor = 0.5 + 0.5 * clamp(1 - self.damage, 0, 1)
-        temperature_factor = clamp(1 - self.temperature, 0, 1)
-        self.sprite.red = damage_factor
-        self.sprite.green = damage_factor * temperature_factor
-        self.sprite.blue = damage_factor * temperature_factor
-
         self.sprite.render()
 
     def step(self, dt):
@@ -185,6 +176,7 @@ class Cloud(Actor):
     def init_sprite(self):
         texture = pyglet.resource.texture('images/cloud.png')
         self.sprite = rabbyt.Sprite(texture, scale=0.02)
+        self.sprite.alpha = 0.8
 
     def delete(self):
         self.game_screen.world.DestroyBody(self.body)
@@ -259,24 +251,39 @@ class GameScreen(Screen):
         glScalef(scale, scale, scale)
         for cloud in self.clouds:
             cloud.draw_shadow()
+        self.icarus.draw()
         for cloud in self.clouds:
             cloud.draw()
-        self.icarus.draw()
         glPopMatrix()
+
+        self.draw_fade()
+
         if config.fps:
             self.clock_display.draw()
-        if self.icarus.fatigue >= 0.5:
-            glBindTexture(GL_TEXTURE_2D, 0)
-            glColor4f(0, 0, 0, clamp(self.icarus.fatigue, 0, 1) - 0.5)
-            glBegin(GL_QUADS)
-            glVertex2f(0, 0)
-            glVertex2f(self.window.width, 0)
-            glVertex2f(self.window.width, self.window.height)
-            glVertex2f(0, self.window.height)
-            glEnd()
-        else:
-            fatigue_factor = 1
         return pyglet.event.EVENT_HANDLED
+
+    def draw_fade(self):
+        glBindTexture(GL_TEXTURE_2D, 0)
+        glBegin(GL_TRIANGLE_FAN)
+
+        # No color in the bottom center.
+        glColor4f(0, 0, 0, 0)
+        glVertex2f(self.window.width // 2, 0)
+
+        # Red for damage in the lower left corner.
+        glColor4f(1, 0, 0, clamp(self.icarus.damage, 0, 1))
+        glVertex2f(0, 0)
+
+        # Yellow for heat along the top.
+        glColor4f(1, 1, 0, 0.5 * clamp(self.icarus.temperature, 0, 1))
+        glVertex2f(0, self.window.height)
+        glVertex2f(self.window.width, self.window.height)
+
+        # Purple for fatigue in the lower right corner.
+        glColor4f(1, 0, 1, clamp(self.icarus.fatigue, 0, 1))
+        glVertex2f(self.window.width, 0)
+
+        glEnd()
 
     def on_key_press(self, symbol, modifiers):
         if symbol == pyglet.window.key.ESCAPE:
