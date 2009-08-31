@@ -97,19 +97,56 @@ class Icarus(Actor):
         self.body.SetMassFromShapes()
 
     def init_sprite(self):
-        texture = pyglet.resource.texture('images/icarus.png')
-        self.sprite = rabbyt.Sprite(texture, scale=0.02)
+        flying_texture = pyglet.resource.texture('images/icarus-flying.png')
+        self.flying_sprite = rabbyt.Sprite(flying_texture, scale=0.02)
+        walking_texture = pyglet.resource.texture('images/icarus-walking.png')
+        self.walking_sprite = rabbyt.Sprite(walking_texture, scale=0.03)
+        self.sprite = self.flying_sprite
 
     def delete(self):
         self.game_screen.world.DestroyBody(self.body)
 
     def draw(self):
+        if self.state == 'walking':
+            self.sprite = self.walking_sprite
+        else:
+            self.sprite = self.flying_sprite
         self.sprite.xy = self.body.position.tuple()
         self.sprite.rot = self.body.angle * 180 / pi
         self.sprite.scale_x = self.facing * abs(self.sprite.scale_x)
+        self.sprite.green = 1 - clamp(self.damage, 0, 1)
+        self.sprite.blue = 1 - clamp(self.damage, 0, 1)
         self.sprite.render()
 
     def step(self, dt):
+        self.step_heating(dt)
+        self.update_state()
+        if self.state == 'walking':
+            self.step_walking(dt)
+        elif self.state == 'flying':
+            self.step_flying(dt)
+        elif self.state == 'falling':
+            self.step_falling(dt)
+
+    def update_state(self):
+        if self.damage >= 1 or self.fatigue >= 1:
+            self.state = 'falling'
+        elif pyglet.window.key.UP in self.keys:
+            self.state = 'flying'
+        else:
+            # See if there's any ground beneath Icarus's feet.
+            segment = b2Segment()
+            segment.p1 = self.body.position
+            segment.p2 = segment.p1 + b2Vec2(0, -1)
+            _, _, shape = self.game_screen.world.RaycastOne(segment, False,
+                                                            None)
+            if shape is not None:
+                self.state = 'walking'
+            else:
+                self.state = 'flying'
+
+
+    def step_heating(self, dt):
         if self.heating:
             self.temperature = (dt / config.heat_duration +
                                 clamp(self.temperature, 0, 1))
@@ -120,12 +157,18 @@ class Icarus(Actor):
             self.temperature = min(1, self.temperature)
             self.temperature = (clamp(self.temperature, 0, 1) -
                                 dt / config.cool_duration)
-        if self.damage >= 1 or self.fatigue >= 1:
-            self.state = 'falling'
-        if self.state == 'flying':
-            self.step_flying(dt)
-        elif self.state == 'falling':
-            self.step_falling(dt)
+
+    def step_walking(self, dt):
+        self.fatigue = clamp(self.fatigue, 0, 1) - dt / config.rest_duration
+        left = pyglet.window.key.LEFT in self.keys
+        right = pyglet.window.key.RIGHT in self.keys
+        if left ^ right:
+            self.facing = right - left
+        force = b2Vec2(right - left, 0) * 10 - self.body.linearVelocity
+        self.body.ApplyForce(force, self.body.position)
+        torque = -(self.body.angle * config.icarus_angular_k +
+                   self.body.angularVelocity * config.icarus_angular_damping)
+        self.body.ApplyTorque(torque)
 
     def step_flying(self, dt):
         self.fatigue = dt / config.flight_duration + clamp(self.fatigue, 0, 1)
@@ -213,7 +256,8 @@ class GameScreen(Screen):
         self.init_world()
         self.clock_display = pyglet.clock.ClockDisplay()
         self.icarus = Icarus(self)
-        self.clouds = [Cloud(self, (-5, 3)), Cloud(self, (5, 4))]
+        self.clouds = [Cloud(self, (-3, 3)), Cloud(self, (8, 4)),
+                       Cloud(self, (-4, 10))]
         self.sun = Sun(self, (0, 20))
         self.time = 0
         self.dt = 1 / 60
@@ -250,6 +294,7 @@ class GameScreen(Screen):
         scale = self.window.height / 15
         glScalef(scale, scale, scale)
         x, y = self.icarus.body.position.tuple()
+        y += config.camera_dy
         glTranslatef(-x, -y, 0)
         for cloud in self.clouds:
             cloud.draw_shadow()
@@ -257,34 +302,20 @@ class GameScreen(Screen):
         for cloud in self.clouds:
             cloud.draw()
         glPopMatrix()
-
-        self.draw_fade()
-
+        self.draw_temperature()
         if config.fps:
             self.clock_display.draw()
         return pyglet.event.EVENT_HANDLED
 
-    def draw_fade(self):
+    def draw_temperature(self):
         glBindTexture(GL_TEXTURE_2D, 0)
-        glBegin(GL_TRIANGLE_FAN)
-
-        # No color in the bottom center.
+        glBegin(GL_QUADS)
         glColor4f(0, 0, 0, 0)
-        glVertex2f(self.window.width // 2, 0)
-
-        # Red for damage in the lower left corner.
-        glColor4f(1, 0, 0, clamp(self.icarus.damage, 0, 1))
         glVertex2f(0, 0)
-
-        # Yellow for heat along the top.
-        glColor4f(1, 1, 0, 0.5 * clamp(self.icarus.temperature, 0, 1))
-        glVertex2f(0, self.window.height)
-        glVertex2f(self.window.width, self.window.height)
-
-        # Purple for fatigue in the lower right corner.
-        glColor4f(1, 0, 1, clamp(self.icarus.fatigue, 0, 1))
         glVertex2f(self.window.width, 0)
-
+        glColor4f(1, 1, 0, 0.5 * clamp(self.icarus.temperature, 0, 1))
+        glVertex2f(self.window.width, self.window.height)
+        glVertex2f(0, self.window.height)
         glEnd()
 
     def on_key_press(self, symbol, modifiers):

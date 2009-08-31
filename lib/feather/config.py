@@ -16,3 +16,4 @@ rest_duration = 5
 sky_color = 0.7, 0.8, 0.9
 shadow_color = 0.6, 0.7, 0.8
 cloud_height = 1
+camera_dy = 2
