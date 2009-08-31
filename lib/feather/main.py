@@ -8,6 +8,11 @@ from pyglet.gl import *
 import rabbyt
 import sys
 
+def save_screenshot(name='screenshot.png', format='RGB'):
+    image = pyglet.image.get_buffer_manager().get_color_buffer().image_data
+    image.format = format
+    image.save(name)
+
 def clamp(x, min_x, max_x):
     return max(min_x, min(max_x, x))
 
@@ -321,6 +326,8 @@ class GameScreen(Screen):
     def on_key_press(self, symbol, modifiers):
         if symbol == pyglet.window.key.ESCAPE:
             self.delete()
+        elif symbol == pyglet.window.key.F12:
+            save_screenshot('feather-screenshot.png')
         else:
             self.icarus.on_key_press(symbol, modifiers)
         return pyglet.event.EVENT_HANDLED
