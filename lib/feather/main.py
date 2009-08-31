@@ -7,6 +7,9 @@ from pyglet.gl import *
 import rabbyt
 import sys
 
+def clamp(x, min_x, max_x):
+    return max(min_x, min(max_x, x))
+
 class Screen(object):
     def __init__(self, window):
         self.window = window
@@ -46,26 +49,46 @@ class Actor(object):
     def draw(self):
         pass
 
+class Sun(Actor):
+    def __init__(self, game_screen, position=(0, 0)):
+        self.game_screen = game_screen
+        self.position = position
+
+    def step(self, dt):
+        segment = b2Segment()
+        segment.p1 = self.position
+        segment.p2 = self.game_screen.icarus.body.position
+        _, _, shape = self.game_screen.world.RaycastOne(segment, True, None)
+        if shape is not None and shape.GetBody().userData is self.game_screen.icarus:
+            self.game_screen.icarus.heating = 1
+        else:
+            self.game_screen.icarus.heating = 0
+
 class Icarus(Actor):
     def __init__(self, game_screen, position=(0, 0)):
         self.game_screen = game_screen
-        self._init_body(position)
-        self._init_sprite()
-        self._keys = set()
-        self._power = 1
-        self._facing = 1
+        self.init_body(position)
+        self.init_sprite()
+        self.keys = set()
+        self.heating = 0
+        self.temperature = 0
+        self.damage = 0
+        self.fatigue = 0
+        self.state = 'flying'
+        self.facing = 1
 
-    def _init_body(self, position):
+    def init_body(self, position):
         body_def = b2BodyDef()
         body_def.position = position
         self.body = self.game_screen.world.CreateBody(body_def)
+        self.body.userData = self
         shape_def = b2CircleDef()
         shape_def.radius = 0.5
         shape_def.density = 1
         self.body.CreateShape(shape_def)
         self.body.SetMassFromShapes()
 
-    def _init_sprite(self):
+    def init_sprite(self):
         texture = pyglet.resource.texture('images/icarus.png')
         self.sprite = rabbyt.Sprite(texture, scale=0.02)
 
@@ -74,46 +97,76 @@ class Icarus(Actor):
 
     def draw(self):
         self.sprite.xy = self.body.position.tuple()
-        self.sprite.scale_x = self._facing * abs(self.sprite.scale_x)
+        self.sprite.scale_x = self.facing * abs(self.sprite.scale_x)
+        if self.state == 'falling':
+            self.sprite.scale_y = -abs(self.sprite.scale_y)
+        else:
+            self.sprite.scale_y = abs(self.sprite.scale_y)
+
+        # Fade to red as Icarus is heated by the sun, then fade to black as he
+        # is burnt.
+        damage_factor = 0.5 + 0.5 * clamp(1 - self.damage, 0, 1)
+        temperature_factor = clamp(1 - self.temperature, 0, 1)
+        self.sprite.red = damage_factor
+        self.sprite.green = damage_factor * temperature_factor
+        self.sprite.blue = damage_factor * temperature_factor
+
         self.sprite.render()
 
     def step(self, dt):
-        up = pyglet.window.key.UP in self._keys
-        left = pyglet.window.key.LEFT in self._keys
-        right = pyglet.window.key.RIGHT in self._keys
+        if self.heating:
+            self.temperature = (dt / config.heat_duration +
+                                clamp(self.temperature, 0, 1))
+            if self.temperature >= 1:
+                self.damage = (dt / config.burn_duration +
+                               clamp(self.damage, 0, 1))
+        else:
+            self.temperature = min(1, self.temperature)
+            self.temperature = (clamp(self.temperature, 0, 1) -
+                                dt / config.cool_duration)
+        if self.damage >= 1 or self.fatigue >= 1:
+            self.state = 'falling'
+        if self.state == 'flying':
+            self.step_flying(dt)
+
+    def step_flying(self, dt):
+        self.fatigue = dt / config.flight_duration + clamp(self.fatigue, 0, 1)
+        up = pyglet.window.key.UP in self.keys
+        left = pyglet.window.key.LEFT in self.keys
+        right = pyglet.window.key.RIGHT in self.keys
         if left ^ right:
-            self._facing = right - left
-        lift_force = up * self._power * config.icarus_lift_force
+            self.facing = right - left
+        lift_force = up * config.icarus_lift_force
         side_force = (right - left) * config.icarus_side_force
-        left = pyglet.window.key.LEFT in self._keys
-        right = pyglet.window.key.LEFT in self._keys
+        left = pyglet.window.key.LEFT in self.keys
+        right = pyglet.window.key.LEFT in self.keys
         air_force = -(self.body.linearVelocity * config.icarus_air_resistance)
         self.body.ApplyForce(b2Vec2(side_force, lift_force) + air_force,
                              self.body.position)
 
     def on_key_press(self, symbol, modifiers):
-        self._keys.add(symbol)
+        self.keys.add(symbol)
     
     def on_key_release(self, symbol, modifiers):
-        self._keys.discard(symbol)
+        self.keys.discard(symbol)
 
 class Cloud(Actor):
     def __init__(self, game_screen, position=(0, 0)):
         self.game_screen = game_screen
-        self._init_body(position)
-        self._init_sprite()
+        self.init_body(position)
+        self.init_sprite()
 
-    def _init_body(self, position):
+    def init_body(self, position):
         body_def = b2BodyDef()
         body_def.position = position
         self.body = self.game_screen.world.CreateBody(body_def)
-        shape_def = b2CircleDef()
-        shape_def.radius = 1
-        shape_def.density = 0.1
+        shape_def = b2PolygonDef()
+        shape_def.SetAsBox(2, 0.5)
+        # shape_def.density = 0.1
         self.body.CreateShape(shape_def)
         self.body.SetMassFromShapes()
 
-    def _init_sprite(self):
+    def init_sprite(self):
         texture = pyglet.resource.texture('images/cloud.png')
         self.sprite = rabbyt.Sprite(texture, scale=0.02)
 
@@ -131,10 +184,11 @@ class Cloud(Actor):
 class GameScreen(Screen):
     def __init__(self, window):
         super(GameScreen, self).__init__(window)
-        self._init_world()
-        self._clock_display = pyglet.clock.ClockDisplay()
-        self._icarus = Icarus(self)
-        self._clouds = [Cloud(self, (-5, 5)), Cloud(self, (5, 5))]
+        self.init_world()
+        self.clock_display = pyglet.clock.ClockDisplay()
+        self.icarus = Icarus(self)
+        self.clouds = [Cloud(self, (-5, 3)), Cloud(self, (5, 4))]
+        self.sun = Sun(self, (0, 20))
         self.time = 0
         self.dt = 1 / 60
         self.world_time = 0
@@ -148,42 +202,55 @@ class GameScreen(Screen):
         self.time += dt
         while self.world_time + self.dt <= self.time:
             self.world_time += self.dt
-            self._icarus.step(self.dt)
-            for cloud in self._clouds:
+            self.icarus.step(self.dt)
+            self.sun.step(self.dt)
+            for cloud in self.clouds:
                 cloud.step(self.dt)
             self.world.Step(self.dt, config.position_iterations,
                             config.velocity_iterations)
 
-    def _init_world(self):
+    def init_world(self):
         aabb = b2AABB()
         aabb.lowerBound = -100, -100
         aabb.upperBound = 100, 100
         self.world = b2World(aabb, (0, -config.gravity), True)
 
     def on_draw(self):
-        glClearColor(0.7, 0.8, 0.9, 0)
+        red, green, blue = config.background_color
+        glClearColor(red, green, blue, 0)
         self.window.clear()
         glPushMatrix()
         glTranslatef(self.window.width // 2, self.window.height // 2, 0)
         scale = self.window.height / 15
         glScalef(scale, scale, scale)
-        self._icarus.draw()
-        for cloud in self._clouds:
+        self.icarus.draw()
+        for cloud in self.clouds:
             cloud.draw()
         glPopMatrix()
         if config.fps:
-            self._clock_display.draw()
+            self.clock_display.draw()
+        if self.icarus.fatigue >= 0.5:
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glColor4f(0, 0, 0, clamp(self.icarus.fatigue, 0, 1) - 0.5)
+            glBegin(GL_QUADS)
+            glVertex2f(0, 0)
+            glVertex2f(self.window.width, 0)
+            glVertex2f(self.window.width, self.window.height)
+            glVertex2f(0, self.window.height)
+            glEnd()
+        else:
+            fatigue_factor = 1
         return pyglet.event.EVENT_HANDLED
 
     def on_key_press(self, symbol, modifiers):
         if symbol == pyglet.window.key.ESCAPE:
             self.delete()
         else:
-            self._icarus.on_key_press(symbol, modifiers)
+            self.icarus.on_key_press(symbol, modifiers)
         return pyglet.event.EVENT_HANDLED
 
     def on_key_release(self, symbol, modifiers):
-        self._icarus.on_key_release(symbol, modifiers)
+        self.icarus.on_key_release(symbol, modifiers)
         return pyglet.event.EVENT_HANDLED
 
 def main():
