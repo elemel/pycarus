@@ -188,8 +188,8 @@ class Cloud(Actor):
         top_right = cloud_position + b2Vec2(self.width / 2, 0)
         left_slope = top_left - sun_position
         right_slope = top_right - sun_position
-        bottom_left = top_left + left_slope
-        bottom_right = top_right + right_slope
+        bottom_left = top_left + left_slope * 1000
+        bottom_right = top_right + right_slope * 1000
         glBindTexture(GL_TEXTURE_2D, 0)
         glColor3f(*config.shadow_color)
         glBegin(GL_QUADS)
@@ -249,6 +249,8 @@ class GameScreen(Screen):
         glTranslatef(self.window.width // 2, self.window.height // 2, 0)
         scale = self.window.height / 15
         glScalef(scale, scale, scale)
+        x, y = self.icarus.body.position.tuple()
+        glTranslatef(-x, -y, 0)
         for cloud in self.clouds:
             cloud.draw_shadow()
         self.icarus.draw()
