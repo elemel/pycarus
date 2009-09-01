@@ -134,7 +134,7 @@ class Icarus(Actor):
             self.step_falling(dt)
 
     def update_state(self):
-        if self.damage >= 1 or self.fatigue >= 1:
+        if self.damage >= 1 or self.fatigue >= 1 or self.body.position.y <= 0:
             self.state = 'falling'
         elif pyglet.window.key.UP in self.keys:
             self.state = 'flying'
@@ -142,16 +142,18 @@ class Icarus(Actor):
             # See if there's any ground beneath Icarus's feet.
             segment = b2Segment()
             segment.p1 = self.body.position
-            segment.p2 = segment.p1 + b2Vec2(0, -1)
+            segment.p2 = segment.p1 + b2Vec2(0, -0.6)
             _, _, shape = self.game_screen.world.RaycastOne(segment, False,
                                                             None)
-            if shape is not None:
+            if shape is not None and not shape.isSensor:
                 self.state = 'walking'
             else:
                 self.state = 'flying'
 
     def step_walking(self, dt):
         self.fatigue = clamp(self.fatigue, 0, 1) - dt / config.rest_duration
+        if not self.melting:
+            self.damage = clamp(self.damage, 0, 1) - dt / config.fix_duration
         left = pyglet.window.key.LEFT in self.keys
         right = pyglet.window.key.RIGHT in self.keys
         if left ^ right:
@@ -171,7 +173,9 @@ class Icarus(Actor):
         right = pyglet.window.key.RIGHT in self.keys
         if left ^ right:
             self.facing = right - left
-        lift_force = up * (1 - clamp(self.fatigue, 0, 1)) * config.icarus_lift_force
+        fatigue_factor = 1 - 2 * clamp(self.fatigue - 0.5, 0, 0.5)
+        damage_factor = 1 - 2 * clamp(self.damage - 0.5, 0, 0.5)
+        lift_force = up * fatigue_factor * damage_factor * config.icarus_lift_force
         side_force = (right - left) * config.icarus_side_force
         left = pyglet.window.key.LEFT in self.keys
         right = pyglet.window.key.LEFT in self.keys
@@ -195,25 +199,29 @@ class Icarus(Actor):
         self.keys.discard(symbol)
 
 class Cloud(Actor):
-    def __init__(self, game_screen, position=(0, 0), width=5):
+    def __init__(self, game_screen, position=(0, 0), linear_velocity=(0, 0),
+                 sensor=True, static=False):
         self.game_screen = game_screen
-        self.width = width
-        self.init_body(position)
+        self.width = 4.5
+        self.init_body(position, linear_velocity, sensor, static)
         self.init_sprite()
 
-    def init_body(self, position):
+    def init_body(self, position, linear_velocity, sensor, static):
         body_def = b2BodyDef()
         body_def.position = position
         self.body = self.game_screen.world.CreateBody(body_def)
         shape_def = b2PolygonDef()
         shape_def.SetAsBox(self.width / 2, config.cloud_height / 2)
+        shape_def.isSensor = sensor
+        shape_def.density = 1
         self.body.CreateShape(shape_def)
-        self.body.SetMassFromShapes()
+        if not static:
+            self.body.SetMassFromShapes()
+            self.body.linearVelocity = linear_velocity
 
     def init_sprite(self):
         texture = pyglet.resource.texture('images/cloud.png')
         self.sprite = rabbyt.Sprite(texture, scale=0.02)
-        self.sprite.alpha = 0.8
 
     def delete(self):
         self.game_screen.world.DestroyBody(self.body)
@@ -244,15 +252,48 @@ class Cloud(Actor):
         anti_gravity_force = self.body.massData.mass * config.gravity
         self.body.ApplyForce((0, anti_gravity_force), self.body.position)
 
+class Island(Actor):
+    def __init__(self, game_screen, position=(0, 0)):
+        self.game_screen = game_screen
+        self.init_body(position)
+        self.init_sprite()
+
+    def init_body(self, position):
+        body_def = b2BodyDef()
+        body_def.position = position
+        self.body = self.game_screen.world.CreateBody(body_def)
+        shape_def = b2PolygonDef()
+        shape_def.SetAsBox(3.5, 1)
+        self.body.CreateShape(shape_def)
+
+    def init_sprite(self):
+        texture = pyglet.resource.texture('images/island.png')
+        self.sprite = rabbyt.Sprite(texture, scale=0.02)
+
+    def delete(self):
+        self.game_screen.world.DestroyBody(self.body)
+
+    def draw(self):
+        self.sprite.xy = (self.body.position + b2Vec2(config.island_offset)).tuple()
+        self.sprite.render()
+
 class GameScreen(Screen):
     def __init__(self, window):
         super(GameScreen, self).__init__(window)
         self.init_world()
         self.clock_display = pyglet.clock.ClockDisplay()
-        self.icarus = Icarus(self)
-        self.clouds = [Cloud(self, (-3, 3)), Cloud(self, (8, 4)),
-                       Cloud(self, (-4, 10))]
-        self.sun = Sun(self, (0, 20))
+        self.icarus = Icarus(self, (2, 1.5))
+        self.clouds = []
+        self.clouds.append(Cloud(self, (1.5, 8), static=True))
+        self.clouds.append(Cloud(self, (20, 15), linear_velocity=(-1.5, 0)))
+        self.clouds.append(Cloud(self, (-30, 24), linear_velocity=(1, 0)))
+        self.clouds.append(Cloud(self, (15, 30), sensor=False, static=True))
+        self.clouds.append(Cloud(self, (13, 35), static=True))
+        temple_texture = pyglet.resource.texture('images/temple.png')
+        self.temples = [rabbyt.Sprite(texture=temple_texture, scale=0.02,
+                                      xy=(15, 31.5))]
+        self.island = Island(self)
+        self.sun = Sun(self, (0, 50))
         self.time = 0
         self.dt = 1 / 60
         self.world_time = 0
@@ -275,7 +316,7 @@ class GameScreen(Screen):
 
     def init_world(self):
         aabb = b2AABB()
-        aabb.lowerBound = -100, -100
+        aabb.lowerBound = -100, -10
         aabb.upperBound = 100, 100
         self.world = b2World(aabb, (0, -config.gravity), True)
 
@@ -287,11 +328,16 @@ class GameScreen(Screen):
         glTranslatef(self.window.width // 2, self.window.height // 2, 0)
         scale = self.window.height / 15
         glScalef(scale, scale, scale)
-        x, y = self.icarus.body.position.tuple()
-        y += config.camera_dy
-        glTranslatef(-x, -y, 0)
+        camera_position = (self.icarus.body.position +
+                           b2Vec2(config.camera_offset))
+        camera_position.y = clamp(camera_position.y, config.camera_min_y,
+                                  config.camera_max_y)
+        glTranslatef(-camera_position.x, -camera_position.y, 0)
         for cloud in self.clouds:
             cloud.draw_shadow()
+        self.draw_sea()
+        self.island.draw()
+        rabbyt.render_unsorted(self.temples)
         self.icarus.draw()
         for cloud in self.clouds:
             cloud.draw()
@@ -300,10 +346,20 @@ class GameScreen(Screen):
             self.clock_display.draw()
         return pyglet.event.EVENT_HANDLED
 
+    def draw_sea(self):
+        glBindTexture(GL_TEXTURE_2D, 0)
+        glColor3f(*config.sea_color)
+        glBegin(GL_QUADS)
+        glVertex2f(-1000, 1.5)
+        glVertex2f(1000, 1.5)
+        glVertex2f(1000, -1000)
+        glVertex2f(-1000, -1000)
+        glEnd()
+
     def draw_fade(self):
         glBindTexture(GL_TEXTURE_2D, 0)
-        glBegin(GL_QUADS)
         glColor4f(*self.fade_color)
+        glBegin(GL_QUADS)
         glVertex2f(0, 0)
         glVertex2f(self.window.width, 0)
         glVertex2f(self.window.width, self.window.height)
