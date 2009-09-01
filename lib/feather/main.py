@@ -73,9 +73,9 @@ class Sun(Actor):
         segment.p2 = self.game_screen.icarus.body.position
         _, _, shape = self.game_screen.world.RaycastOne(segment, True, None)
         if shape is not None and shape.GetBody().userData is self.game_screen.icarus:
-            self.game_screen.icarus.heating = 1
+            self.game_screen.icarus.melting = 1
         else:
-            self.game_screen.icarus.heating = 0
+            self.game_screen.icarus.melting = 0
 
 class Icarus(Actor):
     def __init__(self, game_screen, position=(0, 0)):
@@ -83,8 +83,7 @@ class Icarus(Actor):
         self.init_body(position)
         self.init_sprite()
         self.keys = set()
-        self.heating = 0
-        self.temperature = 0
+        self.melting = 0
         self.damage = 0
         self.fatigue = 0
         self.state = 'flying'
@@ -124,7 +123,8 @@ class Icarus(Actor):
         self.sprite.render()
 
     def step(self, dt):
-        self.step_heating(dt)
+        if self.melting:
+            self.damage = dt / config.melt_duration + clamp(self.damage, 0, 1)
         self.update_state()
         if self.state == 'walking':
             self.step_walking(dt)
@@ -150,19 +150,6 @@ class Icarus(Actor):
             else:
                 self.state = 'flying'
 
-
-    def step_heating(self, dt):
-        if self.heating:
-            self.temperature = (dt / config.heat_duration +
-                                clamp(self.temperature, 0, 1))
-            if self.temperature >= 1:
-                self.damage = (dt / config.burn_duration +
-                               clamp(self.damage, 0, 1))
-        else:
-            self.temperature = min(1, self.temperature)
-            self.temperature = (clamp(self.temperature, 0, 1) -
-                                dt / config.cool_duration)
-
     def step_walking(self, dt):
         self.fatigue = clamp(self.fatigue, 0, 1) - dt / config.rest_duration
         left = pyglet.window.key.LEFT in self.keys
@@ -176,13 +163,15 @@ class Icarus(Actor):
         self.body.ApplyTorque(torque)
 
     def step_flying(self, dt):
-        self.fatigue = dt / config.flight_duration + clamp(self.fatigue, 0, 1)
         up = pyglet.window.key.UP in self.keys
+        if up:
+            self.fatigue = (dt / config.flight_duration +
+                            clamp(self.fatigue, 0, 1))
         left = pyglet.window.key.LEFT in self.keys
         right = pyglet.window.key.RIGHT in self.keys
         if left ^ right:
             self.facing = right - left
-        lift_force = up * config.icarus_lift_force
+        lift_force = up * (1 - clamp(self.fatigue, 0, 1)) * config.icarus_lift_force
         side_force = (right - left) * config.icarus_side_force
         left = pyglet.window.key.LEFT in self.keys
         right = pyglet.window.key.LEFT in self.keys
@@ -307,18 +296,16 @@ class GameScreen(Screen):
         for cloud in self.clouds:
             cloud.draw()
         glPopMatrix()
-        self.draw_temperature()
         if config.fps:
             self.clock_display.draw()
         return pyglet.event.EVENT_HANDLED
 
-    def draw_temperature(self):
+    def draw_fade(self):
         glBindTexture(GL_TEXTURE_2D, 0)
         glBegin(GL_QUADS)
-        glColor4f(0, 0, 0, 0)
+        glColor4f(*self.fade_color)
         glVertex2f(0, 0)
         glVertex2f(self.window.width, 0)
-        glColor4f(1, 1, 0, 0.5 * clamp(self.icarus.temperature, 0, 1))
         glVertex2f(self.window.width, self.window.height)
         glVertex2f(0, self.window.height)
         glEnd()
