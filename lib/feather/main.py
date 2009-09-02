@@ -151,9 +151,13 @@ class Icarus(Actor):
                 self.state = 'flying'
 
     def step_walking(self, dt):
+        # Rest on the ground.
         self.fatigue = clamp(self.fatigue, 0, 1) - dt / config.rest_duration
+
         if not self.melting:
+            # Heal in the shadow.
             self.damage = clamp(self.damage, 0, 1) - dt / config.fix_duration
+
         left = pyglet.window.key.LEFT in self.keys
         right = pyglet.window.key.RIGHT in self.keys
         if left ^ right:
@@ -167,15 +171,19 @@ class Icarus(Actor):
     def step_flying(self, dt):
         up = pyglet.window.key.UP in self.keys
         if up:
+            # Grow tired from flapping those wings.
             self.fatigue = (dt / config.flight_duration +
                             clamp(self.fatigue, 0, 1))
         left = pyglet.window.key.LEFT in self.keys
         right = pyglet.window.key.RIGHT in self.keys
         if left ^ right:
             self.facing = right - left
+
+        # Fatigue and damage affect flight capabilities.
         fatigue_factor = 1 - 2 * clamp(self.fatigue - 0.5, 0, 0.5)
         damage_factor = 1 - 2 * clamp(self.damage - 0.5, 0, 0.5)
         lift_force = up * fatigue_factor * damage_factor * config.icarus_lift_force
+
         side_force = (right - left) * config.icarus_side_force
         left = pyglet.window.key.LEFT in self.keys
         right = pyglet.window.key.LEFT in self.keys
@@ -297,6 +305,14 @@ class GameScreen(Screen):
         self.time = 0
         self.dt = 1 / 60
         self.world_time = 0
+
+        self.fade_tone = 0
+        self.fade_alpha = 1
+        self.fade_delta_tone = 0
+        self.fade_delta_alpha = 0
+        self.fade(tone=0, alpha=0)
+
+        self.respawning = False
         pyglet.clock.schedule_interval(self.step, self.dt)
 
     def delete(self):
@@ -305,6 +321,11 @@ class GameScreen(Screen):
 
     def step(self, dt):
         self.time += dt
+        if self.icarus.state == 'falling' and not self.respawning:
+            self.respawning = True
+            pyglet.clock.schedule_once(self.respawn, config.fade_alpha_duration)
+            self.fade(tone=0, alpha=1)
+        self.step_fade(dt)
         while self.world_time + self.dt <= self.time:
             self.world_time += self.dt
             self.icarus.step(self.dt)
@@ -313,6 +334,18 @@ class GameScreen(Screen):
                 cloud.step(self.dt)
             self.world.Step(self.dt, config.position_iterations,
                             config.velocity_iterations)
+
+    def respawn(self, dt):
+        self.respawning = False
+        self.icarus.delete()
+        self.icarus = Icarus(self, (2, 1.5))
+        self.fade(tone=0, alpha=0)
+
+    def step_fade(self, dt):
+        self.fade_tone = clamp(self.fade_tone, 0, 1)
+        self.fade_alpha = clamp(self.fade_alpha, 0, 1)
+        self.fade_tone += self.fade_delta_tone * dt
+        self.fade_alpha += self.fade_delta_alpha * dt
 
     def init_world(self):
         aabb = b2AABB()
@@ -342,6 +375,7 @@ class GameScreen(Screen):
         for cloud in self.clouds:
             cloud.draw()
         glPopMatrix()
+        self.draw_fade()
         if config.fps:
             self.clock_display.draw()
         return pyglet.event.EVENT_HANDLED
@@ -356,15 +390,24 @@ class GameScreen(Screen):
         glVertex2f(-1000, -1000)
         glEnd()
 
+    def fade(self, tone, alpha):
+        if self.fade_alpha <= 0:
+            self.fade_tone = tone
+        else:
+            self.fade_delta_tone = (1 if tone else -1) / config.fade_tone_duration
+        self.fade_delta_alpha = (1 if alpha else -1) / config.fade_alpha_duration
+
     def draw_fade(self):
-        glBindTexture(GL_TEXTURE_2D, 0)
-        glColor4f(*self.fade_color)
-        glBegin(GL_QUADS)
-        glVertex2f(0, 0)
-        glVertex2f(self.window.width, 0)
-        glVertex2f(self.window.width, self.window.height)
-        glVertex2f(0, self.window.height)
-        glEnd()
+        if self.fade_alpha > 0:
+            glBindTexture(GL_TEXTURE_2D, 0)
+            glColor4f(self.fade_tone, self.fade_tone, self.fade_tone,
+                      self.fade_alpha)
+            glBegin(GL_QUADS)
+            glVertex2f(0, 0)
+            glVertex2f(self.window.width, 0)
+            glVertex2f(self.window.width, self.window.height)
+            glVertex2f(0, self.window.height)
+            glEnd()
 
     def on_key_press(self, symbol, modifiers):
         if symbol == pyglet.window.key.ESCAPE:
