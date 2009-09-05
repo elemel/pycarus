@@ -1,7 +1,7 @@
 from __future__ import division
 
 from Box2D import *
-from feather import config
+from pycarus import config
 from math import *
 import pyglet
 from pyglet.gl import *
@@ -478,7 +478,7 @@ class GameScreen(Screen):
         if symbol == pyglet.window.key.ESCAPE:
             self.delete()
         elif symbol == pyglet.window.key.F12:
-            save_screenshot('feather-screenshot.png')
+            save_screenshot('pycarus-screenshot.png')
         else:
             self.icarus.on_key_press(symbol, modifiers)
         return pyglet.event.EVENT_HANDLED
@@ -492,7 +492,7 @@ def main():
     window.set_exclusive_mouse(config.fullscreen)
     window.set_exclusive_keyboard(config.fullscreen)
     rabbyt.set_default_attribs()
-    pyglet.resource.path = ['@feather']
+    pyglet.resource.path = ['@pycarus']
     TitleScreen(window)
     pyglet.app.run()
 
