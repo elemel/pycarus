@@ -68,23 +68,15 @@ class Sun(Actor):
         self.game_screen = game_screen
         self.position = position
 
-    def step(self, dt):
-        segment = b2Segment()
-        segment.p1 = self.position
-        segment.p2 = self.game_screen.icarus.body.position
-        _, _, shape = self.game_screen.world.RaycastOne(segment, True, None)
-        if shape is not None and shape.GetBody().userData is self.game_screen.icarus:
-            self.game_screen.icarus.melting = 1
-        else:
-            self.game_screen.icarus.melting = 0
-
 class Icarus(Actor):
     def __init__(self, game_screen, position=(0, 0)):
         self.game_screen = game_screen
         self.init_body(position)
         self.init_sprite()
         self.keys = set()
-        self.melting = 0
+        self.sun_distance = 1000
+        self.cloud_distance = 1000
+        
         self.damage = 0
         self.fatigue = 0
         self.state = 'flying'
@@ -124,8 +116,10 @@ class Icarus(Actor):
         self.sprite.render()
 
     def step(self, dt):
-        if self.melting:
-            self.damage = dt / config.melt_duration + clamp(self.damage, 0, 1)
+        if self.cloud_distance > config.shadow_length:
+            self.damage = (dt / self.sun_distance / config.melt_duration +
+                           clamp(self.damage, 0, 1))
+        self.update_distances()
         self.update_state()
         if self.state == 'walking':
             self.step_walking(dt)
@@ -133,6 +127,26 @@ class Icarus(Actor):
             self.step_flying(dt)
         elif self.state == 'falling':
             self.step_falling(dt)
+
+    def update_distances(self):
+        self.update_sun_distance()
+        self.update_cloud_distance()
+
+    def update_sun_distance(self):
+        sun_position = b2Vec2(self.game_screen.sun.position)
+        self.sun_distance = (self.body.position - sun_position).Length()
+
+    def update_cloud_distance(self):
+        segment = b2Segment()
+        segment.p1 = self.body.position
+        segment.p2 = self.game_screen.sun.position
+        _, _, shape = self.game_screen.world.RaycastOne(segment, False, None)
+        if shape is not None and isinstance(shape.GetBody().userData, Cloud):
+            cloud_position = shape.GetBody().position
+            self.cloud_distance = (self.body.position -
+                                   cloud_position).Length()
+        else:
+            self.cloud_distance = 1000
 
     def update_state(self):
         if self.damage >= 1 or self.fatigue >= 1 or self.body.position.y <= 0:
@@ -154,10 +168,6 @@ class Icarus(Actor):
     def step_walking(self, dt):
         # Rest on the ground.
         self.fatigue = clamp(self.fatigue, 0, 1) - dt / config.rest_duration
-
-        if not self.melting:
-            # Heal in the shadow.
-            self.damage = clamp(self.damage, 0, 1) - dt / config.fix_duration
 
         left = pyglet.window.key.LEFT in self.keys
         right = pyglet.window.key.RIGHT in self.keys
@@ -219,13 +229,17 @@ class Cloud(Actor):
         body_def = b2BodyDef()
         body_def.position = position
         self.body = self.game_screen.world.CreateBody(body_def)
+        self.body.userData = self
         shape_def = b2PolygonDef()
         shape_def.SetAsBox(self.width / 2, config.cloud_height / 2)
         shape_def.isSensor = sensor
         shape_def.density = 1
         self.body.CreateShape(shape_def)
-        if not static:
+        if static:
+            self.mass = 0
+        else:
             self.body.SetMassFromShapes()
+            self.mass = self.body.massData.mass
             self.body.linearVelocity = linear_velocity
 
     def init_sprite(self):
@@ -241,14 +255,18 @@ class Cloud(Actor):
         top_left = cloud_position - b2Vec2(self.width / 2, 0)
         top_right = cloud_position + b2Vec2(self.width / 2, 0)
         left_slope = top_left - sun_position
+        left_slope.Normalize()
         right_slope = top_right - sun_position
-        bottom_left = top_left + left_slope * 1000
-        bottom_right = top_right + right_slope * 1000
+        right_slope.Normalize()
+        bottom_left = top_left + left_slope * config.shadow_length
+        bottom_right = top_right + right_slope * config.shadow_length
         glBindTexture(GL_TEXTURE_2D, 0)
-        glColor3f(*config.shadow_color)
         glBegin(GL_QUADS)
+        red, green, blue = config.shadow_color
+        glColor4f(red, green, blue, 1)
         glVertex2f(top_left.x, top_left.y)
         glVertex2f(top_right.x, top_right.y)
+        glColor4f(red, green, blue, 0)
         glVertex2f(bottom_right.x, bottom_right.y)
         glVertex2f(bottom_left.x, bottom_left.y)
         glEnd()
@@ -258,7 +276,7 @@ class Cloud(Actor):
         self.sprite.render()
 
     def step(self, dt):
-        anti_gravity_force = self.body.massData.mass * config.gravity
+        anti_gravity_force = self.mass * config.gravity
         self.body.ApplyForce((0, anti_gravity_force), self.body.position)
         linear_velocity = self.body.linearVelocity
         linear_velocity.y = 0
@@ -474,6 +492,7 @@ def main():
     window.set_exclusive_mouse(config.fullscreen)
     window.set_exclusive_keyboard(config.fullscreen)
     rabbyt.set_default_attribs()
+    pyglet.resource.path = ['@feather']
     TitleScreen(window)
     pyglet.app.run()
 
