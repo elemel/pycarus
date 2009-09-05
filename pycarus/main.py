@@ -200,6 +200,7 @@ class Icarus(Actor):
     def step_standing(self, dt):
         # Rest on the ground.
         self.fatigue = clamp(self.fatigue, 0, 1) - dt / config.rest_duration
+
         left = pyglet.window.key.LEFT in self.keys
         right = pyglet.window.key.RIGHT in self.keys
         if left or right:
@@ -211,6 +212,9 @@ class Icarus(Actor):
         self.body.ApplyTorque(torque)
 
     def step_walking(self, dt):
+        # Rest on the ground.
+        self.fatigue = clamp(self.fatigue, 0, 1) - dt / config.rest_duration
+
         left = pyglet.window.key.LEFT in self.keys
         right = pyglet.window.key.RIGHT in self.keys
         if not left and not right:
@@ -367,7 +371,7 @@ class GameScreen(Screen):
         self.init_fade()
         self.icarus = Icarus(self, (2, 1.5))
 
-        self.respawning = False
+        self.losing = False
         self.winning = False
         pyglet.clock.schedule_interval(self.step, self.dt)
         sfx.wind()
@@ -376,7 +380,8 @@ class GameScreen(Screen):
     def delete(self):
         sfx.pause_all()
         pyglet.clock.unschedule(self.step)
-        pyglet.clock.unschedule(self.respawn)
+        pyglet.clock.unschedule(self.lose)
+        pyglet.clock.unschedule(self.win)
         super(GameScreen, self).delete()
 
     def init_time(self):
@@ -427,9 +432,9 @@ class GameScreen(Screen):
 
     def step(self, dt):
         self.time += dt
-        if self.icarus.state == 'falling' and not self.respawning:
-            self.respawning = True
-            pyglet.clock.schedule_once(self.respawn,
+        if self.icarus.state == 'falling' and not self.losing:
+            self.losing = True
+            pyglet.clock.schedule_once(self.lose,
                                        config.fade_alpha_duration)
             self.fade(tone=0, alpha=1)
         if (self.icarus.state == 'standing' and not self.winning
@@ -451,12 +456,8 @@ class GameScreen(Screen):
             self.world.Step(self.dt, config.position_iterations,
                             config.velocity_iterations)
 
-    def respawn(self, dt):
-        self.respawning = False
-        self.icarus.delete()
-        self.icarus = Icarus(self, (2, 1.5))
-        self.fade(tone=0, alpha=0)
-        sfx.start()
+    def lose(self, dt):
+        self.delete()
 
     def win(self, dt):
         self.delete()
