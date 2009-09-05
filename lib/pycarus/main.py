@@ -1,8 +1,9 @@
 from __future__ import division
 
-from pycarus import config
 from math import *
 from pycarus import b2
+from pycarus import config
+from pycarus import sfx
 import pyglet
 from pyglet.gl import *
 import rabbyt
@@ -82,6 +83,8 @@ class Icarus(Actor):
         self.state = 'flying'
         self.facing = 1
         self.immortal = config.immortal
+        self.melting = False
+        self.flapped = False
 
     def init_body(self, position):
         body_def = b2.b2BodyDef()
@@ -105,7 +108,7 @@ class Icarus(Actor):
         self.game_screen.world.DestroyBody(self.body)
 
     def draw(self):
-        if self.state == 'walking':
+        if self.state in ('standing', 'walking'):
             self.sprite = self.walking_sprite
         else:
             self.sprite = self.flying_sprite
@@ -117,17 +120,42 @@ class Icarus(Actor):
         self.sprite.render()
 
     def step(self, dt):
+        old_state = self.state
         if self.cloud_distance > config.shadow_length and not self.immortal:
+            if not self.melting:
+                self.melting = True
+                sfx.sizzle()
             self.damage = (dt / self.sun_distance / config.melt_duration +
                            clamp(self.damage, 0, 1))
+        else:
+            if self.melting:
+                self.melting = False
+                sfx.sizzle_stop()
         self.update_distances()
         self.update_state()
-        if self.state == 'walking':
+        if self.state == 'standing':
+            self.step_standing(dt)
+        elif self.state == 'walking':
             self.step_walking(dt)
         elif self.state == 'flying':
             self.step_flying(dt)
         elif self.state == 'falling':
             self.step_falling(dt)
+        if self.state != old_state:
+            self.update_sound(old_state)
+        if self.state == 'flying' and not self.flapped:
+            sfx.flap()
+            self.flapped = True
+            pyglet.clock.schedule_once(self.clear_flapped, 1)
+
+    def clear_flapped(self, dt):
+        self.flapped = False
+
+    def update_sound(self, old_state):
+        if old_state == 'walking':
+            sfx.walk_stop()
+        if self.state == 'walking':
+            sfx.walk()
 
     def update_distances(self):
         self.update_sun_distance()
@@ -163,16 +191,30 @@ class Icarus(Actor):
             _, _, shape = self.game_screen.world.RaycastOne(segment, False,
                                                             None)
             if shape is not None and not shape.isSensor:
-                self.state = 'walking'
+                if self.state not in ('standing', 'walking'):
+                    self.state = 'standing'
             else:
                 self.state = 'flying'
 
-    def step_walking(self, dt):
+    def step_standing(self, dt):
         # Rest on the ground.
         self.fatigue = clamp(self.fatigue, 0, 1) - dt / config.rest_duration
-
         left = pyglet.window.key.LEFT in self.keys
         right = pyglet.window.key.RIGHT in self.keys
+        if left or right:
+            self.state = 'walking'
+        force = b2.b2Vec2(-self.body.linearVelocity)
+        self.body.ApplyForce(force, self.body.position)
+        torque = -(self.body.angle * config.icarus_angular_k +
+                   self.body.angularVelocity * config.icarus_angular_damping)
+        self.body.ApplyTorque(torque)
+
+    def step_walking(self, dt):
+        left = pyglet.window.key.LEFT in self.keys
+        right = pyglet.window.key.RIGHT in self.keys
+        if not left and not right:
+            self.state = 'standing'
+            return
         if left ^ right:
             self.facing = right - left
         force = b2.b2Vec2(right - left, 0) * 10 - self.body.linearVelocity
@@ -183,12 +225,12 @@ class Icarus(Actor):
 
     def step_flying(self, dt):
         up = pyglet.window.key.UP in self.keys
-        if up:
+        left = pyglet.window.key.LEFT in self.keys
+        right = pyglet.window.key.RIGHT in self.keys
+        if up or left or right:
             # Grow tired from flapping those wings.
             self.fatigue = (dt / config.flight_duration +
                             clamp(self.fatigue, 0, 1))
-        left = pyglet.window.key.LEFT in self.keys
-        right = pyglet.window.key.RIGHT in self.keys
         if left ^ right:
             self.facing = right - left
 
@@ -326,6 +368,14 @@ class GameScreen(Screen):
 
         self.respawning = False
         pyglet.clock.schedule_interval(self.step, self.dt)
+        sfx.wind()
+        sfx.start()
+
+    def delete(self):
+        sfx.pause_all()
+        pyglet.clock.unschedule(self.step)
+        pyglet.clock.unschedule(self.respawn)
+        super(GameScreen, self).delete()
 
     def init_time(self):
         self.time = 0
@@ -366,11 +416,6 @@ class GameScreen(Screen):
         self.clouds.append(Cloud(self, (x, y - 1.5), sensor=False,
                                  static=True))
 
-    def delete(self):
-        pyglet.clock.unschedule(self.step)
-        pyglet.clock.unschedule(self.respawn)
-        super(GameScreen, self).delete()
-
     def step(self, dt):
         self.time += dt
         if self.icarus.state == 'falling' and not self.respawning:
@@ -393,6 +438,7 @@ class GameScreen(Screen):
         self.icarus.delete()
         self.icarus = Icarus(self, (2, 1.5))
         self.fade(tone=0, alpha=0)
+        sfx.start()
 
     def step_clouds(self, dt):
         self.delete_clouds()
