@@ -1,8 +1,8 @@
 from __future__ import division
 
-from Box2D import *
 from pycarus import config
 from math import *
+from pycarus import b2
 import pyglet
 from pyglet.gl import *
 import rabbyt
@@ -84,11 +84,11 @@ class Icarus(Actor):
         self.immortal = config.immortal
 
     def init_body(self, position):
-        body_def = b2BodyDef()
+        body_def = b2.b2BodyDef()
         body_def.position = position
         self.body = self.game_screen.world.CreateBody(body_def)
         self.body.userData = self
-        shape_def = b2CircleDef()
+        shape_def = b2.b2CircleDef()
         shape_def.radius = 0.5
         shape_def.density = 1
         self.body.CreateShape(shape_def)
@@ -134,11 +134,11 @@ class Icarus(Actor):
         self.update_cloud_distance()
 
     def update_sun_distance(self):
-        sun_position = b2Vec2(self.game_screen.sun.position)
+        sun_position = b2.b2Vec2(*self.game_screen.sun.position)
         self.sun_distance = (self.body.position - sun_position).Length()
 
     def update_cloud_distance(self):
-        segment = b2Segment()
+        segment = b2.b2Segment()
         segment.p1 = self.body.position
         segment.p2 = self.game_screen.sun.position
         _, _, shape = self.game_screen.world.RaycastOne(segment, False, None)
@@ -157,9 +157,9 @@ class Icarus(Actor):
             self.state = 'flying'
         else:
             # See if there's any ground beneath Icarus's feet.
-            segment = b2Segment()
+            segment = b2.b2Segment()
             segment.p1 = self.body.position
-            segment.p2 = segment.p1 + b2Vec2(0, -0.6)
+            segment.p2 = segment.p1 + b2.b2Vec2(0, -0.6)
             _, _, shape = self.game_screen.world.RaycastOne(segment, False,
                                                             None)
             if shape is not None and not shape.isSensor:
@@ -175,7 +175,7 @@ class Icarus(Actor):
         right = pyglet.window.key.RIGHT in self.keys
         if left ^ right:
             self.facing = right - left
-        force = b2Vec2(right - left, 0) * 10 - self.body.linearVelocity
+        force = b2.b2Vec2(right - left, 0) * 10 - self.body.linearVelocity
         self.body.ApplyForce(force, self.body.position)
         torque = -(self.body.angle * config.icarus_angular_k +
                    self.body.angularVelocity * config.icarus_angular_damping)
@@ -201,7 +201,7 @@ class Icarus(Actor):
         left = pyglet.window.key.LEFT in self.keys
         right = pyglet.window.key.LEFT in self.keys
         air_force = -(self.body.linearVelocity * config.icarus_air_resistance)
-        self.body.ApplyForce(b2Vec2(side_force, lift_force) + air_force,
+        self.body.ApplyForce(b2.b2Vec2(side_force, lift_force) + air_force,
                              self.body.position)
         torque = -(self.body.angle * config.icarus_angular_k +
                    self.body.angularVelocity * config.icarus_angular_damping)
@@ -228,11 +228,11 @@ class Cloud(Actor):
         self.init_sprite()
 
     def init_body(self, position, linear_velocity, sensor, static):
-        body_def = b2BodyDef()
+        body_def = b2.b2BodyDef()
         body_def.position = position
         self.body = self.game_screen.world.CreateBody(body_def)
         self.body.userData = self
-        shape_def = b2PolygonDef()
+        shape_def = b2.b2PolygonDef()
         shape_def.SetAsBox(self.width / 2, config.cloud_height / 2)
         shape_def.isSensor = sensor
         shape_def.density = 1
@@ -252,10 +252,10 @@ class Cloud(Actor):
         self.game_screen.world.DestroyBody(self.body)
 
     def draw_shadow(self):
-        sun_position = b2Vec2(self.game_screen.sun.position)
+        sun_position = b2.b2Vec2(*self.game_screen.sun.position)
         cloud_position = self.body.position
-        top_left = cloud_position - b2Vec2(self.width / 2, 0)
-        top_right = cloud_position + b2Vec2(self.width / 2, 0)
+        top_left = cloud_position - b2.b2Vec2(self.width / 2, 0)
+        top_right = cloud_position + b2.b2Vec2(self.width / 2, 0)
         left_slope = top_left - sun_position
         left_slope.Normalize()
         right_slope = top_right - sun_position
@@ -291,10 +291,10 @@ class Island(Actor):
         self.init_sprite()
 
     def init_body(self, position):
-        body_def = b2BodyDef()
+        body_def = b2.b2BodyDef()
         body_def.position = position
         self.body = self.game_screen.world.CreateBody(body_def)
-        shape_def = b2PolygonDef()
+        shape_def = b2.b2PolygonDef()
         shape_def.SetAsBox(3.5, 1)
         self.body.CreateShape(shape_def)
 
@@ -306,7 +306,8 @@ class Island(Actor):
         self.game_screen.world.DestroyBody(self.body)
 
     def draw(self):
-        self.sprite.xy = (self.body.position + b2Vec2(config.island_offset)).tuple()
+        self.sprite.xy = (self.body.position +
+                          b2.b2Vec2(*config.island_offset)).tuple()
         self.sprite.render()
 
 class GameScreen(Screen):
@@ -424,10 +425,10 @@ class GameScreen(Screen):
         self.fade_alpha += self.fade_delta_alpha * dt
 
     def init_world(self):
-        aabb = b2AABB()
+        aabb = b2.b2AABB()
         aabb.lowerBound = -100, -10
         aabb.upperBound = 100, 100
-        self.world = b2World(aabb, (0, -config.gravity), True)
+        self.world = b2.b2World(aabb, (0, -config.gravity), True)
 
     def on_draw(self):
         red, green, blue = config.sky_color
@@ -438,7 +439,7 @@ class GameScreen(Screen):
         scale = self.window.height / 15
         glScalef(scale, scale, scale)
         camera_position = (self.icarus.body.position +
-                           b2Vec2(config.camera_offset))
+                           b2.b2Vec2(*config.camera_offset))
         camera_position.y = clamp(camera_position.y, config.camera_min_y,
                                   config.camera_max_y)
         glTranslatef(-camera_position.x, -camera_position.y, 0)
