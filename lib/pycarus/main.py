@@ -81,6 +81,7 @@ class Icarus(Actor):
         self.fatigue = 0
         self.state = 'flying'
         self.facing = 1
+        self.immortal = config.immortal
 
     def init_body(self, position):
         body_def = b2BodyDef()
@@ -116,7 +117,7 @@ class Icarus(Actor):
         self.sprite.render()
 
     def step(self, dt):
-        if self.cloud_distance > config.shadow_length:
+        if self.cloud_distance > config.shadow_length and not self.immortal:
             self.damage = (dt / self.sun_distance / config.melt_duration +
                            clamp(self.damage, 0, 1))
         self.update_distances()
@@ -149,7 +150,8 @@ class Icarus(Actor):
             self.cloud_distance = 1000
 
     def update_state(self):
-        if self.damage >= 1 or self.fatigue >= 1 or self.body.position.y <= 0:
+        if (not self.immortal and (self.damage >= 1 or self.fatigue >= 1) or
+            self.body.position.y <= 0):
             self.state = 'falling'
         elif pyglet.window.key.UP in self.keys:
             self.state = 'flying'
@@ -344,12 +346,21 @@ class GameScreen(Screen):
         self.create_clouds(init=True)
         self.island = Island(self)
         self.sun = Sun(self, (0, 100))
+        self.create_pearly_gates(config.pearly_gates_position)
 
     def create_temple(self, position):
-        temple_texture = pyglet.resource.texture('images/temple.png')
-        temple = rabbyt.Sprite(texture=temple_texture, scale=0.02,
+        texture = pyglet.resource.texture('images/temple.png')
+        temple = rabbyt.Sprite(texture=texture, scale=0.02,
                                xy=position)
         self.temples.append(temple)
+        x, y = position
+        self.clouds.append(Cloud(self, (x, y - 1.5), sensor=False,
+                                 static=True))
+
+    def create_pearly_gates(self, position):
+        texture = pyglet.resource.texture('images/temple.png')
+        self.pearly_gates = rabbyt.Sprite(texture=texture, scale=0.02,
+                                          xy=position, rgb=(1, 1, 0))
         x, y = position
         self.clouds.append(Cloud(self, (x, y - 1.5), sensor=False,
                                  static=True))
@@ -435,6 +446,7 @@ class GameScreen(Screen):
             cloud.draw_shadow()
         self.draw_sea()
         self.island.draw()
+        self.pearly_gates.render()
         rabbyt.render_unsorted(self.temples)
         self.icarus.draw()
         for cloud in self.clouds:

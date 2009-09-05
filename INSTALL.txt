@@ -1,0 +1,7 @@
+Installing Pycarus
+
+Pycarus has the following dependencies:
+
+- pyglet 1.1.3 - http://www.pyglet.org/download.html
+- pybox2d 2.0.2b1 - http://code.google.com/p/pybox2d/downloads/list
+- Rabbyt 0.8.2 - http://pypi.python.org/pypi/Rabbyt/
