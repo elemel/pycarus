@@ -1,6 +1,6 @@
 The MIT License
 
-Copyright (c) 2009 Anders Backlund, Daniel Backlund, and Mikael Lind
+Copyright (c) 2009 Daniel Backlund and Mikael Lind
 
 This project contains sound effects from The Freesound Project, a collaborative
 database of Creative Commons licensed sounds.
