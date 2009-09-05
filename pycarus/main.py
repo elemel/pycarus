@@ -1,9 +1,10 @@
 from __future__ import division
 
+import b2
+import config
+import sfx
+
 from math import *
-from pycarus import b2
-from pycarus import config
-from pycarus import sfx
 import pyglet
 from pyglet.gl import *
 import rabbyt

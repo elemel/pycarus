@@ -1,4 +1,4 @@
-fps = True
+fps = False
 fullscreen = True
 gravity = 10
 position_iterations = 10

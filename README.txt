@@ -1,5 +1,7 @@
 Pycarus is an entry for PyWeek August 2009.
 
+http://pyweek.org/
+
 Pycarus is a platform game where you take on the role of Icarus. Your goal is
 to reach the pearly gates in the sky without getting burned by the sun.
 
@@ -20,6 +22,9 @@ Copyright (c) 2009 Daniel Backlund and Mikael Lind
 This project contains sound effects from The Freesound Project, a collaborative
 database of Creative Commons licensed sounds. See the README file in the sounds
 directory for details.
+
+The artwork in this project is taken from the painting "Landscape with the Fall
+of Icarus" by Hans Bol. The painting is in the public domain.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
