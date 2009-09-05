@@ -260,6 +260,9 @@ class Cloud(Actor):
     def step(self, dt):
         anti_gravity_force = self.body.massData.mass * config.gravity
         self.body.ApplyForce((0, anti_gravity_force), self.body.position)
+        linear_velocity = self.body.linearVelocity
+        linear_velocity.y = 0
+        self.body.linearVelocity = linear_velocity
 
 class Island(Actor):
     def __init__(self, game_screen, position=(0, 0)):
