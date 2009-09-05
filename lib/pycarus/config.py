@@ -30,5 +30,4 @@ cloud_min_dx = 0.5
 cloud_max_dx = 1.5
 sun_melt_distance = 100
 shadow_length = 20
-pearly_gates_position = 0, 90
 immortal = False

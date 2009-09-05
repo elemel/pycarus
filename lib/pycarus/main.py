@@ -203,7 +203,7 @@ class Icarus(Actor):
         right = pyglet.window.key.RIGHT in self.keys
         if left or right:
             self.state = 'walking'
-        force = b2.b2Vec2(-self.body.linearVelocity)
+        force = -self.body.linearVelocity
         self.body.ApplyForce(force, self.body.position)
         torque = -(self.body.angle * config.icarus_angular_k +
                    self.body.angularVelocity * config.icarus_angular_damping)
@@ -367,6 +367,7 @@ class GameScreen(Screen):
         self.icarus = Icarus(self, (2, 1.5))
 
         self.respawning = False
+        self.winning = False
         pyglet.clock.schedule_interval(self.step, self.dt)
         sfx.wind()
         sfx.start()
@@ -390,14 +391,21 @@ class GameScreen(Screen):
         self.fade(tone=0, alpha=0)
 
     def init_level(self):
-        self.clouds.append(Cloud(self, (1.5, 8), static=True))
-        self.clouds.append(Cloud(self, (13, 35), static=True))
-        self.create_temple((15, 30))
-        self.create_temple((-10, 10))
-        self.create_clouds(init=True)
-        self.island = Island(self)
         self.sun = Sun(self, (0, 100))
-        self.create_pearly_gates(config.pearly_gates_position)
+        self.clouds.append(Cloud(self, (5, 95), static=True))
+        self.pearly_gates_position = (10, 90)
+        self.create_pearly_gates(self.pearly_gates_position)
+        self.create_temple((-10, 80))
+        self.create_temple((-15, 70))
+        self.create_temple((10, 60))
+        self.create_temple((-20, 50))
+        self.create_temple((25, 40))
+        self.create_temple((15, 30))
+        self.create_temple((5, 20))
+        self.create_temple((-10, 10))
+        self.clouds.append(Cloud(self, (1.5, 8), static=True))
+        self.island = Island(self)
+        self.create_clouds(init=True)
 
     def create_temple(self, position):
         texture = pyglet.resource.texture('images/temple.png')
@@ -420,8 +428,17 @@ class GameScreen(Screen):
         self.time += dt
         if self.icarus.state == 'falling' and not self.respawning:
             self.respawning = True
-            pyglet.clock.schedule_once(self.respawn, config.fade_alpha_duration)
+            pyglet.clock.schedule_once(self.respawn,
+                                       config.fade_alpha_duration)
             self.fade(tone=0, alpha=1)
+        if (self.icarus.state == 'standing' and not self.winning
+            and abs(self.icarus.body.position.y -
+                    self.pearly_gates_position[1]) < 2):
+            self.winning = True
+            pyglet.clock.schedule_once(self.win,
+                                       config.fade_alpha_duration)
+            self.fade(tone=1, alpha=1)
+            sfx.win()
         self.step_fade(self.dt)
         while self.world_time + self.dt <= self.time:
             self.world_time += self.dt
@@ -439,6 +456,9 @@ class GameScreen(Screen):
         self.icarus = Icarus(self, (2, 1.5))
         self.fade(tone=0, alpha=0)
         sfx.start()
+
+    def win(self, dt):
+        self.delete()
 
     def step_clouds(self, dt):
         self.delete_clouds()
@@ -517,9 +537,10 @@ class GameScreen(Screen):
     def fade(self, tone, alpha):
         if self.fade_alpha <= 0:
             self.fade_tone = tone
+            self.fade_delta_tone = 0
         else:
-            self.fade_delta_tone = (1 if tone else -1) / config.fade_tone_duration
-        self.fade_delta_alpha = (1 if alpha else -1) / config.fade_alpha_duration
+            self.fade_delta_tone = (2 if tone else -2) / config.fade_tone_duration
+        self.fade_delta_alpha = (2 if alpha else -2) / config.fade_alpha_duration
 
     def draw_fade(self):
         if self.fade_alpha > 0:
