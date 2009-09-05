@@ -6,6 +6,7 @@ from math import *
 import pyglet
 from pyglet.gl import *
 import rabbyt
+import random
 import sys
 
 def save_screenshot(name='screenshot.png', format='RGB'):
@@ -288,35 +289,53 @@ class Island(Actor):
 class GameScreen(Screen):
     def __init__(self, window):
         super(GameScreen, self).__init__(window)
-        self.init_world()
         self.clock_display = pyglet.clock.ClockDisplay()
-        self.icarus = Icarus(self, (2, 1.5))
+
+        self.init_time()
+
         self.clouds = []
-        self.clouds.append(Cloud(self, (1.5, 8), static=True))
-        self.clouds.append(Cloud(self, (20, 15), linear_velocity=(-1.5, 0)))
-        self.clouds.append(Cloud(self, (-30, 24), linear_velocity=(1, 0)))
-        self.clouds.append(Cloud(self, (15, 30), sensor=False, static=True))
-        self.clouds.append(Cloud(self, (13, 35), static=True))
-        temple_texture = pyglet.resource.texture('images/temple.png')
-        self.temples = [rabbyt.Sprite(texture=temple_texture, scale=0.02,
-                                      xy=(15, 31.5))]
-        self.island = Island(self)
-        self.sun = Sun(self, (0, 50))
+        self.temples = []
+        self.init_world()
+        self.init_level()
+        self.init_fade()
+        self.icarus = Icarus(self, (2, 1.5))
+
+        self.respawning = False
+        pyglet.clock.schedule_interval(self.step, self.dt)
+
+    def init_time(self):
         self.time = 0
         self.dt = 1 / 60
         self.world_time = 0
 
+    def init_fade(self):
         self.fade_tone = 0
         self.fade_alpha = 1
         self.fade_delta_tone = 0
         self.fade_delta_alpha = 0
         self.fade(tone=0, alpha=0)
 
-        self.respawning = False
-        pyglet.clock.schedule_interval(self.step, self.dt)
+    def init_level(self):
+        self.clouds.append(Cloud(self, (1.5, 8), static=True))
+        self.clouds.append(Cloud(self, (13, 35), static=True))
+        self.create_temple((15, 30))
+        self.create_temple((-10, 10))
+        self.create_clouds(init=True)
+        self.island = Island(self)
+        self.sun = Sun(self, (0, 100))
+
+    def create_temple(self, position):
+        temple_texture = pyglet.resource.texture('images/temple.png')
+        temple = rabbyt.Sprite(texture=temple_texture, scale=0.02,
+                               xy=position)
+        self.temples.append(temple)
+        x, y = position
+        self.clouds.append(Cloud(self, (x, y - 1.5), sensor=False,
+                                 static=True))
 
     def delete(self):
         pyglet.clock.unschedule(self.step)
+        pyglet.clock.unschedule(self.respawn)
         super(GameScreen, self).delete()
 
     def step(self, dt):
@@ -325,13 +344,14 @@ class GameScreen(Screen):
             self.respawning = True
             pyglet.clock.schedule_once(self.respawn, config.fade_alpha_duration)
             self.fade(tone=0, alpha=1)
-        self.step_fade(dt)
+        self.step_fade(self.dt)
         while self.world_time + self.dt <= self.time:
             self.world_time += self.dt
             self.icarus.step(self.dt)
             self.sun.step(self.dt)
             for cloud in self.clouds:
                 cloud.step(self.dt)
+            self.step_clouds(dt)
             self.world.Step(self.dt, config.position_iterations,
                             config.velocity_iterations)
 
@@ -340,6 +360,30 @@ class GameScreen(Screen):
         self.icarus.delete()
         self.icarus = Icarus(self, (2, 1.5))
         self.fade(tone=0, alpha=0)
+
+    def step_clouds(self, dt):
+        self.delete_clouds()
+        self.create_clouds()
+
+    def delete_clouds(self):
+        clouds = [c for c in self.clouds
+                  if abs(c.body.position.x) > config.cloud_max_x]
+        for cloud in clouds:
+            self.clouds.remove(cloud)
+            cloud.delete()
+
+    def create_clouds(self, init=False):
+        while len(self.clouds) < config.cloud_count:
+            side = random.choice([-1, 1])
+            if init:
+                x = random.uniform(-config.cloud_max_x, config.cloud_max_x)
+            else:
+                x = config.cloud_max_x * side
+            y = random.uniform(config.cloud_min_y, config.cloud_max_y)
+            dx = -side * random.uniform(config.cloud_min_dx,
+                                        config.cloud_max_dx)
+            cloud = Cloud(self, position=(x, y), linear_velocity=(dx, 0))
+            self.clouds.append(cloud)
 
     def step_fade(self, dt):
         self.fade_tone = clamp(self.fade_tone, 0, 1)
@@ -424,6 +468,8 @@ class GameScreen(Screen):
 
 def main():
     window = pyglet.window.Window(fullscreen=config.fullscreen)
+    window.set_exclusive_mouse(config.fullscreen)
+    window.set_exclusive_keyboard(config.fullscreen)
     rabbyt.set_default_attribs()
     TitleScreen(window)
     pyglet.app.run()
