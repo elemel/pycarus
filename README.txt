@@ -3,7 +3,9 @@ Pycarus is an entry for PyWeek August 2009.
 http://pyweek.org/
 
 Pycarus is a platform game where you take on the role of Icarus. Your goal is
-to reach the pearly gates in the sky without getting burned by the sun.
+to reach the pearly gates in the sky without being turned to ashes by the sun.
+The clouds should offer some shade. If you get tired from flying, stop at a
+cloud temple and rest.
 
 INSTALLATION
 
